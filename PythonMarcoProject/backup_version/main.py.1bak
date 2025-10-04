@@ -1,0 +1,11 @@
+from onigiri_memory.coordinate import OnigiriMemoryCoordinate
+
+gm = OnigiriMemoryCoordinate()
+x, y, z = gm.read_xyz()
+print("Before:", x, y, z)
+
+gm.write_xyz(x=150.0, y=100, z=10)  # 或 gm.write_xyz(x=..., y=..., z=...)
+x, y, z = gm.read_xyz()
+print("After:", x, y, z)
+
+gm.close()

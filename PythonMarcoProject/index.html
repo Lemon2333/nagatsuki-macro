@@ -1,0 +1,783 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1" />
+<title>YAML 積木編輯器（原型）</title>
+<style>
+  :root {
+    --bg: #0f172a;
+    --panel: #111827;
+    --text: #e5e7eb;
+    --muted: #9ca3af;
+    --accent: #38bdf8;
+    --accent2: #22c55e;
+    --warn: #f59e0b;
+    --error: #ef4444;
+    --border: #1f2937;
+  }
+  html, body {
+    height: 100%;
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: system-ui, -apple-system, Segoe UI, Roboto, Noto Sans, Ubuntu, Cantarell, 'Helvetica Neue', Arial, 'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol', "Noto Color Emoji";
+  }
+  .app {
+    display: grid;
+    grid-template-rows: auto 1fr;
+    height: 100%;
+  }
+  header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 12px;
+    background: #0b1220;
+    border-bottom: 1px solid var(--border);
+    flex-wrap: wrap;
+  }
+  header .title {
+    font-weight: 700;
+    color: #f8fafc;
+    margin-right: auto;
+  }
+  header .row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+  header select, header input[type="text"], header button {
+    background: var(--panel);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 8px 10px;
+    font-size: 14px;
+    outline: none;
+  }
+  header select:focus, header input[type="text"]:focus, header button:focus {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 2px #38bdf820;
+  }
+  header button.accent {
+    background: linear-gradient(135deg, #0891b2, #06b6d4);
+    border: none;
+    color: #012a35;
+    font-weight: 700;
+  }
+  header .hint {
+    color: var(--muted);
+    font-size: 12px;
+    padding: 0 4px;
+  }
+
+  .main {
+    display: grid;
+    grid-template-columns: 1fr min(44%, 640px);
+    gap: 10px;
+    padding: 10px;
+    height: calc(100vh - 58px);
+  }
+  .canvas-wrap, .side {
+    background: #0b1220;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    overflow: hidden;
+    min-height: 200px;
+  }
+  .side {
+    display: grid;
+    grid-template-rows: auto 1fr;
+  }
+  .side header {
+    border-bottom: 1px solid var(--border);
+  }
+  .panel-title {
+    padding: 10px 12px;
+    font-weight: 700;
+    color: #cbd5e1;
+    background: #0e1627;
+    border-bottom: 1px solid var(--border);
+  }
+  .yaml-wrap {
+    display: grid;
+    grid-template-rows: auto 1fr auto;
+    height: 100%;
+  }
+  .yaml-actions {
+    display: flex;
+    gap: 8px;
+    padding: 8px;
+    border-top: 1px solid var(--border);
+    background: #0e1627;
+  }
+  .yaml-actions button {
+    background: var(--panel);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 8px 10px;
+    font-size: 14px;
+  }
+  .yaml-actions button.primary {
+    background: linear-gradient(135deg, #16a34a, #22c55e);
+    border: none;
+    color: #052e13;
+    font-weight: 700;
+  }
+  #yaml {
+    width: 100%;
+    height: 100%;
+    background: #0a0f1c;
+    color: #a5b4fc;
+    border: none;
+    padding: 12px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+    font-size: 13px;
+    outline: none;
+    resize: none;
+    box-sizing: border-box;
+    line-height: 1.4;
+  }
+  @media (max-width: 900px) {
+    .main {
+      grid-template-columns: 1fr;
+      height: auto;
+    }
+    .side { min-height: 40vh; }
+  }
+  .note {
+    color: var(--muted);
+    font-size: 12px;
+    padding: 6px 12px;
+  }
+</style>
+<!-- Blockly & js-yaml CDN -->
+<script src="https://unpkg.com/blockly/blockly.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/js-yaml@4.1.0/dist/js-yaml.min.js"></script>
+</head>
+<body>
+<div class="app">
+  <header>
+    <div class="title">YAML 積木編輯器（原型）</div>
+    <div class="row">
+      <label for="mode">模式</label>
+      <select id="mode">
+        <option value="route">route（路線）</option>
+        <option value="per_hotkey">per_hotkey（每鍵動作）</option>
+      </select>
+      <span class="hint">切換模式會影響輸出結構</span>
+    </div>
+    <div class="row">
+      <label for="mapName">檔名</label>
+      <input id="mapName" type="text" placeholder="map" value="map" />
+      <button id="downloadBtn" class="accent">下載 YAML</button>
+    </div>
+  </header>
+
+  <div class="main">
+    <div class="canvas-wrap">
+      <div id="toolbox" style="display:none">
+        <xml id="toolbox-xml" style="display:none">
+          <category name="模式與綁定" colour="#60a5fa">
+            <block type="cfg_root"></block>
+            <block type="route_block"></block>
+            <block type="hotkey_block"></block>
+            <block type="reset_hotkey_pair"></block>
+          </category>
+          <sep></sep>
+          <category name="路線步驟" colour="#34d399">
+            <block type="step_waypoint"></block>
+            <block type="step_action"></block>
+          </category>
+          <sep></sep>
+          <category name="動作：鍵盤" colour="#f59e0b">
+            <block type="act_key_chord"></block>
+            <block type="act_key_tap"></block>
+            <block type="act_text"></block>
+            <block type="act_sleep"></block>
+          </category>
+          <category name="動作：滑鼠" colour="#f97316">
+            <block type="act_mouse_click"></block>
+            <block type="act_mouse_click_in_window"></block>
+          </category>
+          <category name="動作：視窗" colour="#a78bfa">
+            <block type="act_focus_window"></block>
+          </category>
+          <category name="動作：座標" colour="#10b981">
+            <block type="act_teleport"></block>
+            <block type="act_offset"></block>
+          </category>
+          <sep></sep>
+          <category name="尋窗條件" colour="#67e8f9">
+            <block type="find_cond"></block>
+          </category>
+        </xml>
+      </div>
+      <div id="blockly" style="width:100%;height:100%;"></div>
+    </div>
+
+    <div class="side">
+      <div class="panel-title">YAML 預覽</div>
+      <div class="yaml-wrap">
+        <textarea id="yaml" spellcheck="false"></textarea>
+        <div class="note">
+          提示：sleep 動作是為了有語義的等待。如果你的 ActionDispatcher 尚未支援 type: "sleep"，可改以 text 空字串 + key_delay_ms 模擬延遲。
+        </div>
+        <div class="yaml-actions">
+          <button id="copyBtn">複製到剪貼簿</button>
+          <button class="primary" id="downloadBtn2">下載 YAML</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+/* ========== 實用工具 ========== */
+const clampInt = (v, min, max, def=0) => {
+  const n = parseInt(v, 10);
+  if (Number.isNaN(n)) return def;
+  return Math.max(min, Math.min(max, n));
+};
+
+const parseNum = (v, def=0) => {
+  const n = Number(v);
+  return Number.isFinite(n) ? n : def;
+};
+
+function downloadText(filename, text) {
+  const blob = new Blob([text], {type: "text/yaml;charset=utf-8"});
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = filename;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 500);
+}
+
+/* ========== 自定義積木與產生器 ========== */
+const jsonFromActionBlock = (b) => {
+  const type = b.type;
+  switch (type) {
+    case 'act_key_chord': {
+      const keys = (b.getFieldValue('VKS') || '').split(',').map(s => s.trim()).filter(Boolean);
+      const press = clampInt(b.getFieldValue('PRESS_MS'), 0, 600000, 100);
+      const rel = clampInt(b.getFieldValue('RELEASE_MS'), 0, 600000, 0);
+      return { type: 'key_chord', vks: keys, press_delay_ms: press, release_delay_ms: rel };
+    }
+    case 'act_key_tap': {
+      const key = (b.getFieldValue('VK') || '').trim();
+      const d = clampInt(b.getFieldValue('DELAY_MS'), 0, 600000, 10);
+      return { type: 'key_tap', vk: key, delay_ms: d };
+    }
+    case 'act_text': {
+      const val = b.getFieldValue('VALUE') || '';
+      const kd = clampInt(b.getFieldValue('KEY_DELAY'), 0, 600000, 0);
+      return { type: 'text', value: val, key_delay_ms: kd };
+    }
+    case 'act_sleep': {
+      const ms = clampInt(b.getFieldValue('MS'), 0, 600000, 1000);
+      return { type: 'sleep', ms: ms };
+    }
+    case 'act_mouse_click': {
+      const btn = b.getFieldValue('BUTTON') || 'left';
+      const mode = b.getFieldValue('MODE') || 'here';
+      const d = clampInt(b.getFieldValue('DELAY_MS'), 0, 600000, 10);
+      if (mode === 'screen') {
+        const x = clampInt(b.getFieldValue('X'), -100000, 100000, 0);
+        const y = clampInt(b.getFieldValue('Y'), -100000, 100000, 0);
+        return { type: 'mouse_click', button: btn, at: { screen: [x, y] }, delay_ms: d };
+      } else if (mode === 'relative') {
+        const dx = clampInt(b.getFieldValue('DX'), -100000, 100000, 0);
+        const dy = clampInt(b.getFieldValue('DY'), -100000, 100000, 0);
+        return { type: 'mouse_click', button: btn, at: { relative: [dx, dy] }, delay_ms: d };
+      }
+      return { type: 'mouse_click', button: btn, delay_ms: d };
+    }
+    case 'act_mouse_click_in_window': {
+      const btn = b.getFieldValue('BUTTON') || 'left';
+      const d = clampInt(b.getFieldValue('DELAY_MS'), 0, 600000, 10);
+      const findBlock = b.getInputTargetBlock('FIND');
+      const clientX = clampInt(b.getFieldValue('CX'), -100000, 100000, 0);
+      const clientY = clampInt(b.getFieldValue('CY'), -100000, 100000, 0);
+      const find = jsonFromFind(findBlock);
+      return { type: 'mouse_click_in_window', button: btn, delay_ms: d, find, client: [clientX, clientY] };
+    }
+    case 'act_focus_window': {
+      const timeout = clampInt(b.getFieldValue('TIMEOUT'), 0, 600000, 800);
+      const findBlock = b.getInputTargetBlock('FIND');
+      const find = jsonFromFind(findBlock);
+      return { type: 'focus_window', timeout_ms: timeout, find };
+    }
+    case 'act_teleport': {
+      const x = parseNum(b.getFieldValue('X'), 0);
+      const y = parseNum(b.getFieldValue('Y'), 0);
+      const z = parseNum(b.getFieldValue('Z'), 0);
+      return { type: 'teleport', x, y, z };
+    }
+    case 'act_offset': {
+      const dx = parseNum(b.getFieldValue('DX'), 0);
+      const dy = parseNum(b.getFieldValue('DY'), 0);
+      const dz = parseNum(b.getFieldValue('DZ'), 0);
+      return { type: 'offset', dx, dy, dz };
+    }
+  }
+  return null;
+};
+
+const jsonFromFind = (b) => {
+  if (!b) return {};
+  return {
+    title_equals: b.getFieldValue('TITLE_EQ') || undefined,
+    title_contains: b.getFieldValue('TITLE_CT') || undefined,
+    class_equals: b.getFieldValue('CLASS_EQ') || undefined,
+    class_contains: b.getFieldValue('CLASS_CT') || undefined,
+    pid: (b.getFieldValue('PID') || '').trim() ? parseInt(b.getFieldValue('PID'), 10) : undefined,
+    visible_only: (b.getFieldValue('VISIBLE') || 'TRUE') === 'TRUE',
+  };
+};
+
+const jsonFromWaypoint = (b) => {
+  const x = parseNum(b.getFieldValue('X'), 0);
+  const y = parseNum(b.getFieldValue('Y'), 0);
+  const z = parseNum(b.getFieldValue('Z'), 0);
+  const d = clampInt(b.getFieldValue('DELAY'), 0, 600000, 150);
+  return { x, y, z, delay_ms: d };
+};
+
+/* ========== 定義積木 ========== */
+Blockly.Blocks['cfg_root'] = {
+  init: function() {
+    this.appendDummyInput().appendField("設定模式為")
+      .appendField(new Blockly.FieldDropdown([["route","route"],["per_hotkey","per_hotkey"]]), "MODE");
+    this.setColour("#60a5fa");
+    this.setTooltip("全域配置：選擇 route 或 per_hotkey 模式。實際輸出以右上角下拉為準。");
+  }
+};
+
+Blockly.Blocks['route_block'] = {
+  init: function() {
+    this.appendDummyInput()
+      .appendField("路線 熱鍵名稱")
+      .appendField(new Blockly.FieldTextInput("numpad 1"), "LABEL");
+    this.appendDummyInput()
+      .appendField("進行方式")
+      .appendField(new Blockly.FieldDropdown([["one_step","one_step"],["run_all","run_all"]]), "ADV");
+    this.appendDummyInput()
+      .appendField("循環")
+      .appendField(new Blockly.FieldDropdown([["true","true"],["false","false"]]), "LOOP");
+    this.appendStatementInput("STEPS")
+      .setCheck(["STEP"])
+      .appendField("步驟");
+    this.setColour("#34d399");
+    this.setTooltip("建立一條路線；在 route 模式下輸出到 routes。");
+  }
+};
+
+Blockly.Blocks['hotkey_block'] = {
+  init: function() {
+    this.appendDummyInput()
+      .appendField("熱鍵")
+      .appendField(new Blockly.FieldTextInput("numpad 1"), "HK")
+      .appendField("對應動作");
+    this.appendStatementInput("ACTS").setCheck(["ACTION"]);
+    this.setColour("#60a5fa");
+    this.setTooltip("per_hotkey 模式下，為特定熱鍵指定動作序列（實際輸出為第一個動作；如需多步請改用 route）。");
+  }
+};
+
+Blockly.Blocks['reset_hotkey_pair'] = {
+  init: function() {
+    this.appendDummyInput()
+      .appendField("為 路線")
+      .appendField(new Blockly.FieldTextInput("numpad 1"), "ROUTE_LABEL")
+      .appendField("設定 reset_hotkey")
+      .appendField(new Blockly.FieldTextInput("numpad 0"), "RESET_HK");
+    this.setColour("#60a5fa");
+    this.setTooltip("在 route 模式下，為指定路線提供 reset_hotkey。");
+  }
+};
+
+Blockly.Blocks['step_waypoint'] = {
+  init: function(){
+    this.appendDummyInput()
+      .appendField("路點 X").appendField(new Blockly.FieldNumber(0, -1e9, 1e9, 0.001), "X")
+      .appendField("Y").appendField(new Blockly.FieldNumber(0, -1e9, 1e9, 0.001), "Y")
+      .appendField("Z").appendField(new Blockly.FieldNumber(0, -1e9, 1e9, 0.001), "Z")
+      .appendField("等待ms").appendField(new Blockly.FieldNumber(150, 0, 600000, 1), "DELAY");
+    this.setPreviousStatement(true, "STEP");
+    this.setNextStatement(true, "STEP");
+    this.setColour("#34d399");
+    this.setTooltip("將玩家位置設定為 (x,y,z)，並等待指定毫秒。");
+  }
+};
+
+Blockly.Blocks['step_action'] = {
+  init: function(){
+    this.appendDummyInput().appendField("執行動作");
+    this.appendStatementInput("A").setCheck(["ACTION"]);
+    this.setPreviousStatement(true, "STEP");
+    this.setNextStatement(true, "STEP");
+    this.setColour("#34d399");
+    this.setTooltip("在路線中插入一個動作。");
+  }
+};
+
+Blockly.Blocks['act_key_chord'] = {
+  init: function() {
+    this.appendDummyInput()
+      .appendField("按住鍵（逗號分隔）")
+      .appendField(new Blockly.FieldTextInput("W"), "VKS");
+    this.appendDummyInput()
+      .appendField("按住ms")
+      .appendField(new Blockly.FieldNumber(3000, 0, 600000, 1), "PRESS_MS")
+      .appendField("鬆開間隔ms")
+      .appendField(new Blockly.FieldNumber(0, 0, 600000, 1), "RELEASE_MS");
+    this.setPreviousStatement(true, "ACTION");
+    this.setNextStatement(true, "ACTION");
+    this.setColour("#f59e0b");
+    this.setTooltip("key_chord：按住多鍵一段時間，然後依序鬆開。");
+  }
+};
+
+Blockly.Blocks['act_key_tap'] = {
+  init: function() {
+    this.appendDummyInput()
+      .appendField("點按鍵")
+      .appendField(new Blockly.FieldTextInput("SPACE"), "VK")
+      .appendField("按下-放開間隔ms")
+      .appendField(new Blockly.FieldNumber(10, 0, 600000, 1), "DELAY_MS");
+    this.setPreviousStatement(true, "ACTION");
+    this.setNextStatement(true, "ACTION");
+    this.setColour("#f59e0b");
+    this.setTooltip("key_tap：按一次鍵。");
+  }
+};
+
+Blockly.Blocks['act_text'] = {
+  init: function() {
+    this.appendDummyInput()
+      .appendField("輸入文字")
+      .appendField(new Blockly.FieldTextInput("Hello"), "VALUE");
+    this.appendDummyInput()
+      .appendField("每鍵延遲ms")
+      .appendField(new Blockly.FieldNumber(0, 0, 600000, 1), "KEY_DELAY");
+    this.setPreviousStatement(true, "ACTION");
+    this.setNextStatement(true, "ACTION");
+    this.setColour("#f59e0b");
+    this.setTooltip("text：輸入文字，UTF-16。");
+  }
+};
+
+Blockly.Blocks['act_sleep'] = {
+  init: function() {
+    this.appendDummyInput()
+      .appendField("等待（毫秒）")
+      .appendField(new Blockly.FieldNumber(1000, 0, 600000, 1), "MS");
+    this.setPreviousStatement(true, "ACTION");
+    this.setNextStatement(true, "ACTION");
+    this.setColour("#f59e0b");
+    this.setTooltip("sleep：純延遲。若後端未支援，可替代用 text 空字串 + key_delay_ms。");
+  }
+};
+
+Blockly.Blocks['act_mouse_click'] = {
+  init: function() {
+    this.appendDummyInput()
+      .appendField("滑鼠")
+      .appendField(new Blockly.FieldDropdown([["left","left"],["right","right"],["middle","middle"]]), "BUTTON");
+    this.appendDummyInput()
+      .appendField("座標模式")
+      .appendField(new Blockly.FieldDropdown([["目前位置","here"],["螢幕","screen"],["相對","relative"]]), "MODE");
+    this.appendDummyInput()
+      .appendField("X").appendField(new Blockly.FieldNumber(0, -100000, 100000, 1), "X")
+      .appendField("Y").appendField(new Blockly.FieldNumber(0, -100000, 100000, 1), "Y");
+    this.appendDummyInput()
+      .appendField("DX").appendField(new Blockly.FieldNumber(0, -100000, 100000, 1), "DX")
+      .appendField("DY").appendField(new Blockly.FieldNumber(0, -100000, 100000, 1), "DY");
+    this.appendDummyInput()
+      .appendField("延遲ms")
+      .appendField(new Blockly.FieldNumber(10, 0, 600000, 1), "DELAY_MS");
+    this.setPreviousStatement(true, "ACTION");
+    this.setNextStatement(true, "ACTION");
+    this.setColour("#f97316");
+    this.setTooltip("mouse_click：在螢幕/相對/當前位置點擊。");
+  }
+};
+
+Blockly.Blocks['act_mouse_click_in_window'] = {
+  init: function() {
+    this.appendDummyInput()
+      .appendField("視窗內點擊")
+      .appendField(new Blockly.FieldDropdown([["left","left"],["right","right"],["middle","middle"]]), "BUTTON");
+    this.appendDummyInput()
+      .appendField("client X").appendField(new Blockly.FieldNumber(0, -100000, 100000, 1), "CX")
+      .appendField("Y").appendField(new Blockly.FieldNumber(0, -100000, 100000, 1), "CY");
+    this.appendDummyInput()
+      .appendField("延遲ms")
+      .appendField(new Blockly.FieldNumber(10, 0, 600000, 1), "DELAY_MS");
+    this.appendValueInput("FIND").setCheck("FIND").appendField("尋窗條件");
+    this.setPreviousStatement(true, "ACTION");
+    this.setNextStatement(true, "ACTION");
+    this.setColour("#f97316");
+    this.setTooltip("mouse_click_in_window：在找到的視窗客戶區座標點擊。");
+  }
+};
+
+Blockly.Blocks['act_focus_window'] = {
+  init: function() {
+    this.appendDummyInput()
+      .appendField("前置視窗，逾時ms")
+      .appendField(new Blockly.FieldNumber(800, 0, 600000, 1), "TIMEOUT");
+    this.appendValueInput("FIND").setCheck("FIND").appendField("尋窗條件");
+    this.setPreviousStatement(true, "ACTION");
+    this.setNextStatement(true, "ACTION");
+    this.setColour("#a78bfa");
+    this.setTooltip("focus_window：將視窗帶到前景。");
+  }
+};
+
+Blockly.Blocks['act_teleport'] = {
+  init: function() {
+    this.appendDummyInput()
+      .appendField("瞬移到 X").appendField(new Blockly.FieldNumber(0, -1e9, 1e9, 0.001), "X")
+      .appendField("Y").appendField(new Blockly.FieldNumber(0, -1e9, 1e9, 0.001), "Y")
+      .appendField("Z").appendField(new Blockly.FieldNumber(0, -1e9, 1e9, 0.001), "Z");
+    this.setPreviousStatement(true, "ACTION");
+    this.setNextStatement(true, "ACTION");
+    this.setColour("#10b981");
+    this.setTooltip("teleport：直接設定 XYZ。");
+  }
+};
+
+Blockly.Blocks['act_offset'] = {
+  init: function() {
+    this.appendDummyInput()
+      .appendField("偏移 DX").appendField(new Blockly.FieldNumber(0, -1e9, 1e9, 0.001), "DX")
+      .appendField("DY").appendField(new Blockly.FieldNumber(0, -1e9, 1e9, 0.001), "DY")
+      .appendField("DZ").appendField(new Blockly.FieldNumber(0, -1e9, 1e9, 0.001), "DZ");
+    this.setPreviousStatement(true, "ACTION");
+    this.setNextStatement(true, "ACTION");
+    this.setColour("#10b981");
+    this.setTooltip("offset：在目前 XYZ 上加上偏移量。");
+  }
+};
+
+Blockly.Blocks['find_cond'] = {
+  init: function() {
+    this.appendDummyInput().appendField("尋窗條件");
+    this.appendDummyInput()
+      .appendField("title == ").appendField(new Blockly.FieldTextInput(""), "TITLE_EQ");
+    this.appendDummyInput()
+      .appendField("title contains ").appendField(new Blockly.FieldTextInput(""), "TITLE_CT");
+    this.appendDummyInput()
+      .appendField("class == ").appendField(new Blockly.FieldTextInput(""), "CLASS_EQ");
+    this.appendDummyInput()
+      .appendField("class contains ").appendField(new Blockly.FieldTextInput(""), "CLASS_CT");
+    this.appendDummyInput()
+      .appendField("pid ").appendField(new Blockly.FieldTextInput(""), "PID");
+    this.appendDummyInput()
+      .appendField("只限可見")
+      .appendField(new Blockly.FieldDropdown([["TRUE","TRUE"],["FALSE","FALSE"]]), "VISIBLE");
+    this.setOutput(true, "FIND");
+    this.setColour("#67e8f9");
+    this.setTooltip("尋找視窗的條件。空白欄位會被忽略。");
+  }
+};
+
+/* ========== 工作區初始化 ========== */
+const workspace = Blockly.inject('blockly', {
+  toolbox: document.getElementById('toolbox-xml'),
+  grid: { spacing: 20, length: 3, colour: '#223', snap: true },
+  trashcan: true,
+  theme: Blockly.Theme.defineTheme('dark', {
+    'base': Blockly.Themes.Classic,
+    'componentStyles': {
+      'toolboxBackgroundColour': '#0a1222',
+      'toolboxForegroundColour': '#cbd5e1',
+      'flyoutBackgroundColour': '#0a0f1c',
+      'flyoutForegroundColour': '#cbd5e1',
+      'flyoutOpacity': 0.95,
+      'scrollbarColour': '#334155'
+    }
+  })
+});
+
+/* ========== 生成 YAML ========== */
+function gatherBlocksToJSON() {
+  const mode = document.getElementById('mode').value; // route | per_hotkey
+
+  const topBlocks = workspace.getTopBlocks(true);
+  const result = { mode };
+
+  if (mode === 'route') {
+    const routes = {};
+    const resetPairs = [];
+    for (const b of topBlocks) {
+      if (b.type === 'route_block') {
+        const label = (b.getFieldValue('LABEL') || '').trim();
+        if (!label) continue;
+        const adv = (b.getFieldValue('ADV') || 'one_step');
+        const loop = (b.getFieldValue('LOOP') || 'true') === 'true';
+        const steps = [];
+        let stepBlock = b.getInputTargetBlock('STEPS');
+        while (stepBlock) {
+          if (stepBlock.type === 'step_waypoint') {
+            const w = jsonFromWaypoint(stepBlock);
+            const { delay_ms, ...wp } = w;
+            steps.push({ kind: 'wp', wp, delay_ms });
+          } else if (stepBlock.type === 'step_action') {
+            const actionBlock = stepBlock.getInputTargetBlock('A');
+            if (actionBlock) {
+              const act = jsonFromActionBlock(actionBlock);
+              if (act) steps.push({ kind: 'act', act });
+            }
+          }
+          stepBlock = stepBlock.getNextBlock();
+        }
+        routes[label] = {
+          type: 'path',
+          waypoints: [], // 兼容字段，實際由 steps 使用
+          delay_ms: 150,
+          advance: adv,
+          loop: loop,
+          steps: steps
+        };
+      } else if (b.type === 'reset_hotkey_pair') {
+        resetPairs.push({
+          route_label: (b.getFieldValue('ROUTE_LABEL') || '').trim(),
+          reset_hotkey: (b.getFieldValue('RESET_HK') || '').trim()
+        });
+      }
+    }
+    // 套用 reset_hotkey
+    for (const pair of resetPairs) {
+      const { route_label, reset_hotkey } = pair;
+      if (route_label && reset_hotkey && routes[route_label]) {
+        routes[route_label].reset_hotkey = reset_hotkey;
+      }
+    }
+    result.routes = routes;
+  } else {
+    // per_hotkey
+    const hotkeys = {};
+    for (const b of topBlocks) {
+      if (b.type === 'hotkey_block') {
+        const hk = (b.getFieldValue('HK') || '').trim();
+        if (!hk) continue;
+        const actBlock = b.getInputTargetBlock('ACTS');
+        // 以第一個 ACTION 作為該熱鍵的行為（需要多步請改用 route）
+        if (actBlock) {
+          const act = jsonFromActionBlock(actBlock);
+          if (act) {
+            hotkeys[hk] = { ...act };
+          }
+        }
+      }
+    }
+    result.hotkeys = hotkeys;
+  }
+
+  return result;
+}
+
+function refreshYAML() {
+  const json = gatherBlocksToJSON();
+  // 清除 undefined 欄位
+  const clean = (obj) => {
+    if (Array.isArray(obj)) return obj.map(clean).filter(v => v !== undefined);
+    if (obj && typeof obj === 'object') {
+      const o = {};
+      for (const k of Object.keys(obj)) {
+        const v = clean(obj[k]);
+        if (v !== undefined && !(typeof v === 'object' && v !== null && Object.keys(v).length === 0)) {
+          o[k] = v;
+        }
+      }
+      return o;
+    }
+    return obj;
+  };
+  const cleaned = clean(json);
+  const yaml = jsyaml.dump(cleaned, { lineWidth: -1, noRefs: true, skipInvalid: true });
+  document.getElementById('yaml').value = yaml;
+}
+
+/* 事件綁定 */
+workspace.addChangeListener(() => {
+  refreshYAML();
+});
+document.getElementById('mode').addEventListener('change', refreshYAML);
+
+document.getElementById('downloadBtn').addEventListener('click', () => {
+  const name = (document.getElementById('mapName').value || 'map').replace(/\.[^.]+$/, '');
+  downloadText(`${name}.yaml`, document.getElementById('yaml').value || '');
+});
+document.getElementById('downloadBtn2').addEventListener('click', () => {
+  const name = (document.getElementById('mapName').value || 'map').replace(/\.[^.]+$/, '');
+  downloadText(`${name}.yaml`, document.getElementById('yaml').value || '');
+});
+document.getElementById('copyBtn').addEventListener('click', async () => {
+  const text = document.getElementById('yaml').value || '';
+  try {
+    await navigator.clipboard.writeText(text);
+    alert('已複製到剪貼簿');
+  } catch(e) {
+    // 回退
+    const ta = document.getElementById('yaml');
+    ta.select();
+    document.execCommand('copy');
+    alert('已複製（舊版 API）');
+  }
+});
+
+/* 初始示例內容 */
+(function seedExample(){
+  const xmlText = `
+<xml xmlns="https://developers.google.com/blockly/xml">
+  <block type="route_block" x="20" y="20">
+    <field name="LABEL">numpad 1</field>
+    <field name="ADV">run_all</field>
+    <field name="LOOP">false</field>
+    <statement name="STEPS">
+      <block type="step_action">
+        <statement name="A">
+          <block type="act_key_chord">
+            <field name="VKS">W</field>
+            <field name="PRESS_MS">3000</field>
+            <field name="RELEASE_MS">0</field>
+          </block>
+        </statement>
+        <next>
+          <block type="step_action">
+            <statement name="A">
+              <block type="act_sleep">
+                <field name="MS">1000</field>
+              </block>
+            </statement>
+            <next>
+              <block type="step_action">
+                <statement name="A">
+                  <block type="act_key_chord">
+                    <field name="VKS">D</field>
+                    <field name="PRESS_MS">3000</field>
+                    <field name="RELEASE_MS">0</field>
+                  </block>
+                </statement>
+              </block>
+            </next>
+          </block>
+        </next>
+      </block>
+    </statement>
+  </block>
+</xml>`;
+  const dom = Blockly.Xml.textToDom(xmlText);
+  Blockly.Xml.domToWorkspace(dom, workspace);
+  refreshYAML();
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,32 @@
+key: '5'
+default_scheme: default
+mode: route
+routes:
+  numpad 4:
+    steps:
+    - waypoint:
+        x: 10.0
+        y: 100.0
+        z: 10.0
+      delay_ms: 150
+    - action:
+        type: mouse_click
+        button: right
+        delay_ms: 10
+    - action:
+        type: text
+        value: ''
+        key_delay_ms: 1000
+    - waypoint:
+        x: 10.0
+        y: 200.0
+        z: 10.0
+      delay_ms: 150
+    - action:
+        type: mouse_click
+        button: right
+        delay_ms: 10
+    delay_ms: 150
+    advance: all
+    loop: false
+    reset_hotkey: null

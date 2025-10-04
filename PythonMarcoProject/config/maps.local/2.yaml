@@ -1,0 +1,22 @@
+key: '2'
+default_scheme: default
+mode: route
+routes:
+  run_w_then_d:
+    advance: run_all
+    loop: false
+    steps:
+      - action:
+          type: key_chord
+          vks: ["W"]           # 按下 W
+          press_delay_ms: 3000 # 按住 3 秒
+          release_delay_ms: 0
+      - action:
+          type: text           # 這步只是用來「等待 1 秒」，用 text 的 key_delay_ms=1000 達到延遲效果（不輸出文字）
+          value: ""
+          key_delay_ms: 1000
+      - action:
+          type: key_chord
+          vks: ["D"]           # 按下 D
+          press_delay_ms: 3000 # 按住 3 秒
+          release_delay_ms: 0

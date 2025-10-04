@@ -1,0 +1,26 @@
+key: '3'
+default_scheme: default
+mode: route
+routes:
+  numpad 3:
+    steps:
+    - action:
+        type: key_chord
+        vks:
+        - W
+        press_delay_ms: 3000
+        release_delay_ms: 0
+    - action:
+        type: text
+        value: 你好，世界
+        key_delay_ms: 1000
+    - action:
+        type: key_chord
+        vks:
+        - D
+        press_delay_ms: 3000
+        release_delay_ms: 0
+    delay_ms: 150
+    advance: one_step
+    loop: false
+    reset_hotkey: null
