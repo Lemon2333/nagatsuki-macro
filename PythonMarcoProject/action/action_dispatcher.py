@@ -3,7 +3,7 @@ import time
 from typing import Any, Dict, List, Optional
 
 from .input_controller import WindowManager, Mouse, Keyboard, VK
-
+from locator_service import LocatorService #1.2 update
 
 def _ms(v: Optional[int], default_ms: int = 10) -> float:
     """毫秒轉秒，若 v 無效則用 default_ms。"""
@@ -41,9 +41,42 @@ def _vk_from_name(name: str) -> int:
 class ActionDispatcher:
     def __init__(self, mgm):
         self.mgm = mgm  # MultiGameManager
+    #1.1 update Start#
+    def _act_rename_windows(self, a: Dict[str, Any]):
+        """
+        參數示例：
+        {
+          "type": "rename_windows",
+          "process_name": "game.exe",
+          "title_equals": "test",          # 或 title_contains
+          "title_contains": null,
+          "pattern": "{base} [{index}]",
+          "start_index": 1,
+          "visible_only": True
+        }
+        """
+        process_name = a.get("process_name")
+        base_title = a.get("title_equals") or ""
+        title_contains = a.get("title_contains")
+        pattern = a.get("pattern") or "{base} [{index}]"
+        start_index = int(a.get("start_index", 1))
+        visible_only = bool(a.get("visible_only", True))
 
+        renamed = WindowManager.rename_same_title_windows(
+            base_title=base_title,
+            process_name=process_name,
+            title_contains=title_contains,
+            visible_only=visible_only,
+            pattern=pattern,
+            start_index=start_index,
+            sort_by_hwnd=True,
+        )
+        print(f"[rename_windows] renamed {len(renamed)} windows")
+        #1.1 update end#
     # 單一 action 執行
     def run_action(self, act: Dict[str, Any]):
+        elif t == "rename_windows": #1.1 update 
+        self._act_rename_windows(act) #1.1 update
         t = (act.get("type") or "").lower()
         if not t:
             return
@@ -76,7 +109,42 @@ class ActionDispatcher:
         y = float(a["y"])
         z = float(a["z"])
         self.mgm.write_xyz_all(x=x, y=y, z=z)
+    #### 1.2 update ###
+    def _act_locator_start(self, a: Dict[str, Any]):
+        if self._locator:
+            print("[Locator] already running")
+            return
+        toggle = a.get("toggle_hotkey", "CTRL+ALT+L")
+        capture = a.get("capture_hotkey", "CTRL+ALT+P")
+        show_osd = bool(a.get("show_osd", False))
 
+        def parse_combo(s: str):
+            s = s.upper().replace(" ", "")
+            mods = 0
+            if "CTRL" in s: mods |= 0x0002
+            if "ALT" in s: mods |= 0x0001
+            if "SHIFT" in s: mods |= 0x0004
+            if "WIN" in s: mods |= 0x0008
+            vk = getattr(ctypes.windll.user32, 'VkKeyScanW')(ord(s.split('+')[-1][0]))
+            # 更穩定：對常用按鍵自行映射
+            keymap = {"P": 0x50, "L": 0x4C}
+            vk = keymap.get(s.split('+')[-1], 0x50)
+            return mods, vk
+
+        tmods, tvk = parse_combo(toggle)
+        cmods, cvk = parse_combo(capture)
+
+        self._locator = LocatorService(toggle_mods=tmods, toggle_vk=tvk,
+                                       capture_mods=cmods, capture_vk=cvk,
+                                       show_osd=show_osd,
+                                       callback=None)
+        self._locator.start()
+
+    def _act_locator_stop(self):
+        if self._locator:
+            self._locator.stop()
+            self._locator = None
+    #### END 1.2 UPDATE ####
     def _act_offset(self, a: Dict[str, Any]):
         cur = self.mgm.read_xyz_first()
         if cur is None:
